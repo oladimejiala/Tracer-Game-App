@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PathMaster Challenge</title>
+    <style>
+        body {
+            font-family: 'Arial Rounded MT Bold', 'Arial', sans-serif;
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
+            color: white;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            height: 90vh;
+        }
+        
+        .score-board {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            margin-bottom: 20px;
+            background-color: rgba(0,0,0,0.3);
+            padding: 15px;
+            border-radius: 15px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        .player {
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 1.2em;
+            transition: all 0.3s;
+        }
+        
+        .active-player {
+            background-color: rgba(255,255,255,0.2);
+            transform: scale(1.05);
+            box-shadow: 0 0 15px rgba(255,255,255,0.5);
+        }
+        
+        .round-info {
+            font-size: 1.5em;
+            margin: 10px 0;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        .timer {
+            font-size: 1.8em;
+            margin: 10px 0;
+            color: #ffcc00;
+        }
+        
+        .canvas-container {
+            position: relative;
+            width: 400px;
+            height: 400px;
+            margin: 0 auto;
+        }
+        
+        canvas {
+            background-color: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+        }
+        
+        .controls {
+            margin-top: 20px;
+        }
+        
+        button {
+            background: linear-gradient(to bottom, #4CAF50, #45a049);
+            border: none;
+            color: white;
+            padding: 12px 25px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 25px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+        }
+        
+        button:disabled {
+            background: linear-gradient(to bottom, #cccccc, #999999);
+            cursor: not-allowed;
+        }
+        
+        .result-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0,0,0,0.8);
+            color: white;
+            padding: 20px 40px;
+            border-radius: 15px;
+            font-size: 1.5em;
+            z-index: 100;
+            display: none;
+            box-shadow: 0 0 20px rgba(255,255,255,0.5);
+        }
+        
+        .success {
+            color: #4CAF50;
+        }
+        
+        .failure {
+            color: #f44336;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1>PathMaster Challenge</h1>
+        
+        <div class="score-board">
+            <div id="player1" class="player active-player">Player 1: 10pts</div>
+            <div class="round-info">Round 1 of 5</div>
+            <div id="player2" class="player">Player 2: 10pts</div>
+        </div>
+        
+        <div class="timer">Time: 75s</div>
+        
+        <div class="canvas-container">
+            <canvas id="gameCanvas" width="400" height="400"></canvas>
+            <div id="resultMessage" class="result-message"></div>
+        </div>
+        
+        <div class="controls">
+            <button id="submitBtn">Submit Path</button>
+            <button id="retryBtn">Retry</button>
+            <button id="nextRoundBtn" disabled>Next Round</button>
+        </div>
+    </div>
+
+    <script>
+        // Game variables
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const player1Display = document.getElementById('player1');
+        const player2Display = document.getElementById('player2');
+        const roundInfo = document.querySelector('.round-info');
+        const timerDisplay = document.querySelector('.timer');
+        const resultMessage = document.getElementById('resultMessage');
+        const submitBtn = document.getElementById('submitBtn');
+        const retryBtn = document.getElementById('retryBtn');
+        const nextRoundBtn = document.getElementById('nextRoundBtn');
+        
+        let currentPlayer = 1;
+        let scores = [10, 10]; // [player1, player2]
+        let currentRound = 1;
+        let timeLeft = 75;
+        let timer;
+        let isDrawing = false;
+        let path = [];
+        let shapePaths = [];
+        let allSegments = [];
+        let completedSegments = [];
+        
+        // Shape definitions (each shape is an array of line segments [x1, y1, x2, y2])
+        const shapes = [
+            // Round 1: Mercedes logo (circle + 3-pointed star)
+            [
+                // Circle (approximated with line segments)
+                ...generateCircleSegments(200, 200, 150, 36),
+                // Star lines
+                [200, 50, 200, 200],   // Top to center
+                [200, 200, 350, 350],  // Center to bottom-right
+                [200, 200, 50, 350]   // Center to bottom-left
+            ],
+            // Round 2: More complex star
+            [
+                ...generateCircleSegments(200, 200, 150, 36),
+                ...generateStarSegments(200, 200, 150, 100, 5)
+            ],
+            // Round 3: Square with X
+            [
+                // Square
+                [100, 100, 300, 100],
+                [300, 100, 300, 300],
+                [300, 300, 100, 300],
+                [100, 300, 100, 100],
+                // X
+                [100, 100, 300, 300],
+                [100, 300, 300, 100]
+            ],
+            // Round 4: Hexagon with internal lines
+            [
+                ...generatePolygonSegments(200, 200, 150, 6),
+                // Internal lines
+                [200, 50, 200, 350],
+                [85, 125, 315, 275],
+                [85, 275, 315, 125]
+            ],
+            // Round 5: Complex snowflake design
+            [
+                ...generateSnowflakeSegments(200, 200, 150, 6)
+            ]
+        ];
+        
+        // Initialize game
+        initGame();
+        
+        function initGame() {
+            currentPlayer = 1;
+            scores = [10, 10];
+            currentRound = 1;
+            updatePlayerDisplays();
+            loadShape(currentRound - 1);
+            startTurn();
+            
+            // Event listeners
+            canvas.addEventListener('mousedown', startDrawing);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', endDrawing);
+            canvas.addEventListener('mouseout', endDrawing);
+            
+            submitBtn.addEventListener('click', submitPath);
+            retryBtn.addEventListener('click', retryPath);
+            nextRoundBtn.addEventListener('click', nextRound);
+        }
+        
+        function loadShape(shapeIndex) {
+            shapePaths = shapes[shapeIndex];
+            allSegments = shapePaths.map(segment => ({
+                x1: segment[0], y1: segment[1], 
+                x2: segment[2], y2: segment[3],
+                drawn: false
+            }));
+            completedSegments = [];
+            drawShape();
+        }
+        
+        function drawShape() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw the shape (gray lines)
+            ctx.strokeStyle = 'rgba(200, 200, 200, 0.5)';
+            ctx.lineWidth = 3;
+            
+            shapePaths.forEach(segment => {
+                ctx.beginPath();
+                ctx.moveTo(segment[0], segment[1]);
+                ctx.lineTo(segment[2], segment[3]);
+                ctx.stroke();
+            });
+            
+            // Draw already completed segments (green lines)
+            ctx.strokeStyle = 'rgba(100, 255, 100, 0.8)';
+            ctx.lineWidth = 5;
+            
+            completedSegments.forEach(segment => {
+                ctx.beginPath();
+                ctx.moveTo(segment.x1, segment.y1);
+                ctx.lineTo(segment.x2, segment.y2);
+                ctx.stroke();
+            });
+            
+            // Draw current path (blue line)
+            if (path.length > 1) {
+                ctx.strokeStyle = 'rgba(100, 100, 255, 0.8)';
+                ctx.lineWidth = 5;
+                ctx.beginPath();
+                ctx.moveTo(path[0].x, path[0].y);
+                
+                for (let i = 1; i < path.length; i++) {
+                    ctx.lineTo(path[i].x, path[i].y);
+                }
+                
+                ctx.stroke();
+            }
+        }
+        
+        function startDrawing(e) {
+            if (timer === undefined) return;
+            
+            isDrawing = true;
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            path = [{x, y}];
+        }
+        
+        function draw(e) {
+            if (!isDrawing) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            // Only add point if it's significantly different from last point
+            if (path.length === 0 || 
+                Math.abs(x - path[path.length - 1].x) > 5 || 
+                Math.abs(y - path[path.length - 1].y) > 5) {
+                path.push({x, y});
+                drawShape();
+            }
+        }
+        
+        function endDrawing() {
+            isDrawing = false;
+        }
+        
+        function submitPath() {
+            if (path.length < 2) {
+                showResult("Path too short!", false);
+                return;
+            }
+            
+            // Check if all segments were covered without retracing
+            const coveredSegments = checkCoveredSegments();
+            
+            if (coveredSegments.missedSegments.length > 0) {
+                showResult(`Missed ${coveredSegments.missedSegments.length} segments!`, false);
+                return;
+            }
+            
+            if (coveredSegments.retracedSegments.length > 0) {
+                showResult(`Retraced ${coveredSegments.retracedSegments.length} segments!`, false);
+                return;
+            }
+            
+            // Success!
+            scores[currentPlayer - 1] += 2;
+            showResult("Success! +2pts", true);
+            updatePlayerDisplays();
+            endTurn();
+        }
+        
+        function checkCoveredSegments() {
+            const result = {
+                missedSegments: [],
+                retracedSegments: []
+            };
+            
+            // Create a copy of all segments to check against
+            const segmentsToCheck = allSegments.map(seg => ({...seg}));
+            
+            // Check each segment of the drawn path
+            for (let i = 1; i < path.length; i++) {
+                const prev = path[i - 1];
+                const curr = path[i];
+                
+                // Find if this line segment matches any shape segment
+                let foundSegment = null;
+                let foundIndex = -1;
+                
+                for (let j = 0; j < segmentsToCheck.length; j++) {
+                    const seg = segmentsToCheck[j];
+                    
+                    if ((isPointOnLine(prev.x, prev.y, curr.x, curr.y, seg.x1, seg.y1, seg.x2, seg.y2) ||
+                         isPointOnLine(prev.x, prev.y, curr.x, curr.y, seg.x2, seg.y2, seg.x1, seg.y1)) &&
+                        !seg.drawn) {
+                        foundSegment = seg;
+                        foundIndex = j;
+                        break;
+                    }
+                }
+                
+                if (foundSegment) {
+                    foundSegment.drawn = true;
+                    completedSegments.push({
+                        x1: foundSegment.x1, y1: foundSegment.y1,
+                        x2: foundSegment.x2, y2: foundSegment.y2
+                    });
+                }
+            }
+            
+            // Find which segments were missed or retraced
+            segmentsToCheck.forEach(seg => {
+                if (!seg.drawn) {
+                    result.missedSegments.push(seg);
+                }
+            });
+            
+            // For retraced, we'd need more complex logic, simplified here
+            // (In a full implementation, we'd track direction and exact coverage)
+            
+            return result;
+        }
+        
+        function isPointOnLine(px, py, qx, qy, x1, y1, x2, y2) {
+            // Simplified check - in a real game you'd want more precise collision detection
+            const d1 = dist(px, py, x1, y1);
+            const d2 = dist(qx, qy, x2, y2);
+            const lineLength = dist(x1, y1, x2, y2);
+            const totalDist = d1 + d2;
+            
+            return Math.abs(totalDist - lineLength) < 10; // Allow some tolerance
+        }
+        
+        function dist(x1, y1, x2, y2) {
+            return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+        }
+        
+        function retryPath() {
+            path = [];
+            completedSegments = [];
+            allSegments.forEach(seg => seg.drawn = false);
+            drawShape();
+        }
+        
+        function showResult(message, isSuccess) {
+            resultMessage.textContent = message;
+            resultMessage.className = `result-message ${isSuccess ? 'success' : 'failure'}`;
+            resultMessage.style.display = 'block';
+            
+            setTimeout(() => {
+                resultMessage.style.display = 'none';
+            }, 2000);
+        }
+        
+        function startTurn() {
+            updatePlayerDisplays();
+            path = [];
+            timeLeft = 75;
+            updateTimerDisplay();
+            
+            timer = setInterval(() => {
+                timeLeft--;
+                updateTimerDisplay();
+                
+                if (timeLeft <= 0) {
+                    endTurn();
+                }
+            }, 1000);
+        }
+        
+        function endTurn() {
+            clearInterval(timer);
+            timer = undefined;
+            
+            if (timeLeft <= 0) {
+                scores[currentPlayer - 1] -= 1;
+                showResult("Time's up! -1pt", false);
+                updatePlayerDisplays();
+            }
+            
+            // Switch players or go to next round
+            if (currentPlayer === 1) {
+                currentPlayer = 2;
+                startTurn();
+            } else {
+                currentPlayer = 1;
+                nextRoundBtn.disabled = false;
+            }
+        }
+        
+        function nextRound() {
+            nextRoundBtn.disabled = true;
+            currentRound++;
+            
+            if (currentRound > 5) {
+                endGame();
+                return;
+            }
+            
+            roundInfo.textContent = `Round ${currentRound} of 5`;
+            loadShape(currentRound - 1);
+            startTurn();
+        }
+        
+        function endGame() {
+            clearInterval(timer);
+            
+            let winner;
+            if (scores[0] > scores[1]) {
+                winner = "Player 1 wins!";
+            } else if (scores[1] > scores[0]) {
+                winner = "Player 2 wins!";
+            } else {
+                winner = "It's a tie!";
+            }
+            
+            showResult(`Game Over! ${winner}`, true);
+            
+            // Add restart button
+            const restartBtn = document.createElement('button');
+            restartBtn.textContent = "Play Again";
+            restartBtn.addEventListener('click', () => {
+                document.querySelector('.controls').removeChild(restartBtn);
+                initGame();
+            });
+            document.querySelector('.controls').appendChild(restartBtn);
+        }
+        
+        function updatePlayerDisplays() {
+            player1Display.textContent = `Player 1: ${scores[0]}pts`;
+            player2Display.textContent = `Player 2: ${scores[1]}pts`;
+            
+            player1Display.classList.toggle('active-player', currentPlayer === 1);
+            player2Display.classList.toggle('active-player', currentPlayer === 2);
+        }
+        
+        function updateTimerDisplay() {
+            timerDisplay.textContent = `Time: ${timeLeft}s`;
+            
+            if (timeLeft <= 10) {
+                timerDisplay.style.color = '#ff5555';
+            } else {
+                timerDisplay.style.color = '#ffcc00';
+            }
+        }
+        
+        // Helper functions to generate shapes
+        function generateCircleSegments(cx, cy, radius, segments) {
+            const result = [];
+            const angleStep = (2 * Math.PI) / segments;
+            
+            for (let i = 0; i < segments; i++) {
+                const angle1 = i * angleStep;
+                const angle2 = (i + 1) * angleStep;
+                
+                const x1 = cx + radius * Math.cos(angle1);
+                const y1 = cy + radius * Math.sin(angle1);
+                const x2 = cx + radius * Math.cos(angle2);
+                const y2 = cy + radius * Math.sin(angle2);
+                
+                result.push([x1, y1, x2, y2]);
+            }
+            
+            return result;
+        }
+        
+        function generateStarSegments(cx, cy, outerRadius, innerRadius, points) {
+            const result = [];
+            const angleStep = Math.PI / points;
+            
+            for (let i = 0; i < points * 2; i++) {
+                const angle = i * angleStep;
+                const radius = i % 2 === 0 ? outerRadius : innerRadius;
+                
+                const x1 = cx + radius * Math.cos(angle);
+                const y1 = cy + radius * Math.sin(angle);
+                
+                const nextAngle = (i + 1) * angleStep;
+                const nextRadius = (i + 1) % 2 === 0 ? outerRadius : innerRadius;
+                
+                const x2 = cx + nextRadius * Math.cos(nextAngle);
+                const y2 = cy + nextRadius * Math.sin(nextAngle);
+                
+                result.push([x1, y1, x2, y2]);
+            }
+            
+            return result;
+        }
+        
+        function generatePolygonSegments(cx, cy, radius, sides) {
+            const result = [];
+            const angleStep = (2 * Math.PI) / sides;
+            
+            for (let i = 0; i < sides; i++) {
+                const angle1 = i * angleStep;
+                const angle2 = (i + 1) * angleStep;
+                
+                const x1 = cx + radius * Math.cos(angle1);
+                const y1 = cy + radius * Math.sin(angle1);
+                const x2 = cx + radius * Math.cos(angle2);
+                const y2 = cy + radius * Math.sin(angle2);
+                
+                result.push([x1, y1, x2, y2]);
+            }
+            
+            return result;
+        }
+        
+        function generateSnowflakeSegments(cx, cy, radius, branches) {
+            const result = [];
+            const angleStep = (2 * Math.PI) / branches;
+            
+            // Main branches
+            for (let i = 0; i < branches; i++) {
+                const angle = i * angleStep;
+                
+                const x1 = cx;
+                const y1 = cy;
+                const x2 = cx + radius * Math.cos(angle);
+                const y2 = cy + radius * Math.sin(angle);
+                
+                result.push([x1, y1, x2, y2]);
+                
+                // Side branches
+                const sideAngle1 = angle + angleStep/3;
+                const sideAngle2 = angle - angleStep/3;
+                const sideLength = radius * 0.4;
+                
+                const x3 = x2 + sideLength * Math.cos(sideAngle1);
+                const y3 = y2 + sideLength * Math.sin(sideAngle1);
+                result.push([x2, y2, x3, y3]);
+                
+                const x4 = x2 + sideLength * Math.cos(sideAngle2);
+                const y4 = y2 + sideLength * Math.sin(sideAngle2);
+                result.push([x2, y2, x4, y4]);
+            }
+            
+            // Inner hexagon
+            result.push(...generatePolygonSegments(cx, cy, radius * 0.3, 6));
+            
+            return result;
+        }
+    </script>
+</body>
+</html>
